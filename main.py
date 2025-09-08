@@ -413,6 +413,117 @@ async def get_rag_stats(
         )
 
 
+@app.delete("/api/rag/delete_document", response_model=DocumentUploadResponse)
+async def delete_document_rag(
+    category: str = Form(..., description="Categoría del documento a eliminar"),
+    filename: str = Form(..., description="Nombre del archivo a eliminar (con extensión .pdf)"),
+    auth: bool = Depends(auth_dependency)
+) -> DocumentUploadResponse:
+    """
+    🗑️ ELIMINACIÓN DE DOCUMENTO - Elimina un documento específico
+    
+    ⚠️  OPERACIÓN DESTRUCTIVA:
+    - 🗑️ Elimina el archivo físico de la carpeta documents/{category}
+    - 🔥 Elimina TODOS los chunks del documento de la vectorstore
+    - 📁 Elimina la carpeta de categoría si queda vacía
+    - ❌ Esta operación NO se puede deshacer
+    
+    🎯 PARÁMETROS:
+    - category: Nombre de la categoría donde está el documento
+    - filename: Nombre exacto del archivo PDF (incluir .pdf)
+    
+    📋 CASOS DE USO:
+    - Eliminar documentos obsoletos o incorrectos
+    - Limpiar documentos duplicados
+    - Mantenimiento de la base de documentos
+    
+    💡 RECOMENDACIÓN: Verificar con /api/rag/stats antes de eliminar
+    
+    Args:
+        category: Categoría del documento a eliminar
+        filename: Nombre del archivo PDF a eliminar
+        
+    Returns:
+        DocumentUploadResponse: Resultado de la eliminación
+    """
+    try:
+        print(f"🗑️ Solicitud de eliminación: {filename} de categoría '{category}'")
+        
+        # 1. Validaciones básicas
+        if not filename:
+            raise HTTPException(status_code=400, detail="No se proporcionó un nombre de archivo")
+        
+        if not category:
+            raise HTTPException(status_code=400, detail="No se proporcionó una categoría")
+        
+        # 2. Validar que es un PDF
+        if not filename.lower().endswith('.pdf'):
+            return DocumentUploadResponse(
+                status="error",
+                message="Solo se pueden eliminar archivos PDF",
+                data={
+                    "filename": filename,
+                    "category": category,
+                    "file_type": "not_pdf"
+                }
+            )
+        
+        # 3. Validar nombre de categoría
+        if not re.match(r'^[a-zA-Z0-9_-]+$', category):
+            return DocumentUploadResponse(
+                status="error",
+                message="El nombre de la categoría solo puede contener letras, números, guiones y guiones bajos",
+                data={
+                    "category": category,
+                    "filename": filename,
+                    "pattern": "a-zA-Z0-9_-"
+                }
+            )
+        
+        # 4. Obtener el agente RAG
+        try:
+            rag_agent = get_rag_agent()
+        except RuntimeError as e:
+            return DocumentUploadResponse(
+                status="error",
+                message="El agente RAG no está disponible",
+                data={
+                    "error_type": "agent_not_initialized",
+                    "filename": filename,
+                    "category": category,
+                    "error_details": str(e)
+                }
+            )
+        
+        # 5. Eliminar el documento usando el agente RAG
+        result = rag_agent.delete_document(
+            category=category,
+            filename=filename
+        )
+        
+        # 6. Mapear la respuesta del agente al modelo de respuesta
+        return DocumentUploadResponse(
+            status=result["status"],
+            message=result["message"],
+            data=result["data"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error general en eliminación de documento: {e}")
+        return DocumentUploadResponse(
+            status="error",
+            message=f"Error eliminando el documento: {str(e)}",
+            data={
+                "error_type": "general_error",
+                "filename": filename if 'filename' in locals() else "unknown",
+                "category": category if 'category' in locals() else "unknown",
+                "error_details": str(e)
+            }
+        )
+
+
 # DB Agent Urls
 @app.post("/api/db/ask", response_model=DBAgentResponse)
 async def ask_db(

@@ -423,6 +423,154 @@ class RAGAgent:
                 }
             }
 
+    def delete_document(self, category: str, filename: str) -> Dict[str, Any]:
+        """
+        Elimina un documento específico tanto de la vectorstore como del sistema de archivos
+        
+        Args:
+            category: Categoría del documento a eliminar
+            filename: Nombre del archivo a eliminar (con extensión .pdf)
+            
+        Returns:
+            Dict con status, message y data sobre la eliminación
+        """
+        try:
+            print(f"🗑️ Iniciando eliminación: {filename} de categoría '{category}'")
+            
+            # 1. Validar que es un PDF
+            if not filename.lower().endswith('.pdf'):
+                return {
+                    "status": "error",
+                    "message": "Solo se pueden eliminar archivos PDF",
+                    "data": {
+                        "filename": filename,
+                        "category": category
+                    }
+                }
+            
+            # 2. Construir la ruta del archivo
+            file_path = os.path.join(self.documents_path, category, filename)
+            
+            # 3. Verificar que el archivo existe físicamente
+            if not os.path.exists(file_path):
+                return {
+                    "status": "error",
+                    "message": f"El archivo '{filename}' no existe en la categoría '{category}'",
+                    "data": {
+                        "file_path": file_path,
+                        "category": category,
+                        "filename": filename
+                    }
+                }
+            
+            # 4. Obtener conteo antes de la eliminación
+            docs_before = self.vectorstore._collection.count()
+            
+            # 5. Eliminar chunks de la vectorstore usando metadatos
+            # Buscar todos los chunks que coincidan con category y source_file
+            try:
+                # Obtener todos los datos de la colección para filtrar
+                all_data = self.vectorstore._collection.get(
+                    where={
+                        "$and": [
+                            {"category": {"$eq": category}},
+                            {"source_file": {"$eq": filename}}
+                        ]
+                    }
+                )
+                
+                chunks_to_delete = all_data['ids']
+                
+                if chunks_to_delete:
+                    print(f"🔍 Encontrados {len(chunks_to_delete)} chunks a eliminar de vectorstore")
+                    self.vectorstore._collection.delete(ids=chunks_to_delete)
+                    print(f"✅ {len(chunks_to_delete)} chunks eliminados de vectorstore")
+                else:
+                    print("⚠️ No se encontraron chunks en vectorstore para este documento")
+                    
+            except Exception as vectorstore_error:
+                print(f"❌ Error eliminando de vectorstore: {vectorstore_error}")
+                return {
+                    "status": "error",
+                    "message": f"Error eliminando chunks de vectorstore: {str(vectorstore_error)}",
+                    "data": {
+                        "error_type": "vectorstore_deletion_failed",
+                        "filename": filename,
+                        "category": category,
+                        "file_path": file_path
+                    }
+                }
+            
+            # 6. Eliminar archivo físico
+            try:
+                os.remove(file_path)
+                print(f"🗑️ Archivo físico eliminado: {file_path}")
+            except Exception as file_error:
+                print(f"❌ Error eliminando archivo físico: {file_error}")
+                return {
+                    "status": "error",
+                    "message": f"Error eliminando archivo físico: {str(file_error)}",
+                    "data": {
+                        "error_type": "file_deletion_failed",
+                        "filename": filename,
+                        "category": category,
+                        "file_path": file_path,
+                        "vectorstore_chunks_deleted": len(chunks_to_delete) if 'chunks_to_delete' in locals() else 0
+                    }
+                }
+            
+            # 7. Verificar eliminación en vectorstore
+            docs_after = self.vectorstore._collection.count()
+            chunks_deleted = docs_before - docs_after
+            
+            # 8. Verificar si la carpeta de categoría está vacía y eliminarla si es necesario
+            category_path = os.path.join(self.documents_path, category)
+            try:
+                if os.path.exists(category_path) and not os.listdir(category_path):
+                    os.rmdir(category_path)
+                    print(f"📁 Carpeta de categoría vacía eliminada: {category_path}")
+                    category_deleted = True
+                else:
+                    category_deleted = False
+            except Exception as category_error:
+                print(f"⚠️ Error eliminando carpeta de categoría: {category_error}")
+                category_deleted = False
+            
+            print(f"✅ Eliminación completada:")
+            print(f"   - Documento: {filename}")
+            print(f"   - Categoría: {category}")
+            print(f"   - Chunks eliminados: {chunks_deleted}")
+            print(f"   - Vectorstore antes: {docs_before}")
+            print(f"   - Vectorstore después: {docs_after}")
+            
+            return {
+                "status": "success",
+                "message": f"Documento '{filename}' eliminado exitosamente de la categoría '{category}'",
+                "data": {
+                    "filename": filename,
+                    "category": category,
+                    "file_path": file_path,
+                    "chunks_deleted": chunks_deleted,
+                    "vectorstore_documents_before": docs_before,
+                    "vectorstore_documents_after": docs_after,
+                    "category_deleted": category_deleted,
+                    "operation_type": "document_deletion"
+                }
+            }
+            
+        except Exception as e:
+            print(f"❌ Error general eliminando documento: {e}")
+            return {
+                "status": "error",
+                "message": f"Error eliminando documento: {str(e)}",
+                "data": {
+                    "error_type": "general_deletion_error",
+                    "filename": filename,
+                    "category": category,
+                    "error_details": str(e)
+                }
+            }
+
     def ask(self, question: str, user_id: str, chat_history: List[Tuple[str, str]] = None) -> Dict[str, Any]:
         """Procesa una pregunta usando el agente RAG"""
         if not self.is_initialized:
