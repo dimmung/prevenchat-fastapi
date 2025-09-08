@@ -98,7 +98,9 @@ Double check the SQLite query for common mistakes, including:
 
 If there are any of the above mistakes, rewrite the query. If there are no mistakes, just reproduce the original query.
 
-You will call the appropriate tool to execute the query after running this check."""
+You will call the appropriate tool to execute the query after running this check.
+
+IMPORTANT: If the user is just greeting you, just respond with a greeting and don't execute any query. Execute queries only if the user asks for information."""
 query_check_prompt = ChatPromptTemplate.from_messages(
     [("system", query_check_system), 
      # El placeholder espera una lista de mensajes. Le pasaremos la consulta SQL como un mensaje.
@@ -185,6 +187,8 @@ Para preguntas donde necesites contexto sobre la fecha, hoy es día {datetime.no
 Nunca consultes todas las columnas. Sólo pide las columnas relevantes para la pregunta.
 
 Responde SÓLO con la consulta SQL, sin ninguna otra explicación o texto adicional.
+
+IMPORTANTE: Si el usuario está saludando, solo responde con un saludo y no ejecutas ninguna consulta. Ejecuta consultas solo si el usuario pide información.
 """
 query_gen_prompt = ChatPromptTemplate.from_messages([
     ("system", query_gen_system_prompt_text),

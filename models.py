@@ -55,6 +55,29 @@ class DBAgentResponse(BaseModel):
     message: str
     data: Optional[dict] = None
 
+# Modelos Pydantic para el agente RAG
+class RAGAgentRequest(BaseModel):
+    """Modelo para requests al agente RAG"""
+    message: str = Field(..., min_length=1, description="Pregunta del usuario")
+    user_id: str = Field(..., description="ID único del usuario")
+    config: dict = Field(default_factory=dict, description="Configuración adicional para el agente")
+
+class RAGAgentResponse(BaseModel):
+    """Modelo de respuesta del agente RAG"""
+    status: Literal["success", "error"]
+    message: str
+    data: Optional[dict] = None
+
+class DocumentUploadRequest(BaseModel):
+    """Modelo para upload de documentos RAG"""
+    category: str = Field(..., min_length=1, max_length=50, description="Categoría del documento")
+    
+class DocumentUploadResponse(BaseModel):
+    """Modelo de respuesta para upload de documentos"""
+    status: Literal["success", "error", "info"]
+    message: str
+    data: Optional[dict] = None
+
 # Dependency para obtener la sesión de base de datos
 def get_db():
     """
