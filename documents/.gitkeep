@@ -1,0 +1,3 @@
+# Este archivo mantiene el directorio documents en el repositorio
+# El directorio documents se usa para almacenar documentos PDF que son procesados por el agente RAG
+# Los archivos PDF reales no se incluyen en el repositorio por razones de espacio y privacidad
