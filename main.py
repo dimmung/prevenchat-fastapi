@@ -6,6 +6,7 @@ from langgraph.errors import GraphRecursionError
 from models import get_db, DBAgentRequest, DBAgentResponse, RAGAgentRequest, RAGAgentResponse, DocumentUploadResponse
 from memory_service import MemoryService
 from auth import auth_dependency
+from logger import log_exception, log_critical_exception, log_warning_message
 import re
 
 app = FastAPI(
@@ -26,6 +27,8 @@ async def startup_event():
         else:
             print("❌ Error inicializando agente RAG")
     except Exception as e:
+        log_critical_exception(e, context="startup_event - initializing RAG agent", 
+                             extra_data={"event": "app_startup"})
         print(f"❌ Error crítico inicializando agente RAG: {e}")
 
 # RAG Agent Urls
@@ -55,6 +58,8 @@ async def ask_rag(
         try:
             rag_agent = get_rag_agent()
         except RuntimeError as e:
+            log_exception(e, context="ask_rag - getting RAG agent", 
+                         extra_data={"user_id": request.user_id, "message": request.message[:100]})
             return RAGAgentResponse(
                 status="error",
                 message="El agente RAG no está disponible",
@@ -124,6 +129,8 @@ async def ask_rag(
             print(f"📊 Usuario {request.user_id} - Total mensajes RAG: {total_rag_messages}")
                 
         except Exception as memory_error:
+            log_exception(memory_error, context="ask_rag - saving to memory", 
+                         extra_data={"user_id": request.user_id, "operation": "save_message"})
             print(f"⚠️ Error al guardar en memoria RAG: {memory_error}")
             # No fallar la respuesta si hay error de memoria
         
@@ -141,6 +148,8 @@ async def ask_rag(
         )
         
     except Exception as e:
+        log_exception(e, context="ask_rag - general error", 
+                     extra_data={"user_id": request.user_id, "message": request.message[:100]})
         print(f"❌ Error general procesando consulta RAG: {e}")
         return RAGAgentResponse(
             status="error",
@@ -209,6 +218,8 @@ async def upload_document_rag(
         try:
             rag_agent = get_rag_agent()
         except RuntimeError as e:
+            log_exception(e, context="upload_document_rag - getting RAG agent", 
+                         extra_data={"category": category, "filename": file.filename})
             return DocumentUploadResponse(
                 status="error",
                 message="El agente RAG no está disponible",
@@ -261,6 +272,8 @@ async def upload_document_rag(
     except HTTPException:
         raise
     except Exception as e:
+        log_exception(e, context="upload_document_rag - general error", 
+                     extra_data={"category": category, "filename": file.filename if file and file.filename else "unknown"})
         print(f"❌ Error general en upload de documento: {e}")
         return DocumentUploadResponse(
             status="error",
@@ -304,6 +317,8 @@ async def reload_documents_rag(
         try:
             rag_agent = get_rag_agent()
         except RuntimeError as e:
+            log_exception(e, context="reload_documents_rag - getting RAG agent", 
+                         extra_data={"operation": "reload_documents"})
             return DocumentUploadResponse(
                 status="error",
                 message="El agente RAG no está disponible",
@@ -324,6 +339,8 @@ async def reload_documents_rag(
         )
         
     except Exception as e:
+        log_exception(e, context="reload_documents_rag - general error", 
+                     extra_data={"operation": "reload_documents"})
         print(f"❌ Error general en recarga de documentos: {e}")
         return DocumentUploadResponse(
             status="error",
@@ -356,6 +373,8 @@ async def get_rag_stats(
         try:
             rag_agent = get_rag_agent()
         except RuntimeError as e:
+            log_exception(e, context="get_rag_stats - getting RAG agent", 
+                         extra_data={"operation": "get_stats"})
             return DocumentUploadResponse(
                 status="error",
                 message="El agente RAG no está disponible",
@@ -402,6 +421,8 @@ async def get_rag_stats(
         )
         
     except Exception as e:
+        log_exception(e, context="get_rag_stats - general error", 
+                     extra_data={"operation": "get_stats"})
         print(f"❌ Error obteniendo estadísticas RAG: {e}")
         return DocumentUploadResponse(
             status="error",
@@ -484,6 +505,8 @@ async def delete_document_rag(
         try:
             rag_agent = get_rag_agent()
         except RuntimeError as e:
+            log_exception(e, context="delete_document_rag - getting RAG agent", 
+                         extra_data={"category": category, "filename": filename})
             return DocumentUploadResponse(
                 status="error",
                 message="El agente RAG no está disponible",
@@ -511,6 +534,9 @@ async def delete_document_rag(
     except HTTPException:
         raise
     except Exception as e:
+        log_exception(e, context="delete_document_rag - general error", 
+                     extra_data={"category": category if 'category' in locals() else "unknown", 
+                                "filename": filename if 'filename' in locals() else "unknown"})
         print(f"❌ Error general en eliminación de documento: {e}")
         return DocumentUploadResponse(
             status="error",
@@ -575,6 +601,8 @@ async def ask_db(
                 config=config
             )
         except GraphRecursionError as e:
+            log_exception(e, context="ask_db - recursion limit reached", 
+                         extra_data={"user_id": request.user_id, "message": request.message[:100], "recursion_limit": recursion_limit})
             print(f"❌ Error de recursión detectado: {e}")
             return DBAgentResponse(
                 status="error",
@@ -626,6 +654,8 @@ async def ask_db(
             print(f"📊 Usuario {request.user_id} - Total mensajes DB: {total_db_messages}")
                 
         except Exception as memory_error:
+            log_exception(memory_error, context="ask_db - saving to memory", 
+                         extra_data={"user_id": request.user_id, "operation": "save_message"})
             print(f"⚠️ Error al guardar en memoria: {memory_error}")
             # No fallar la respuesta si hay error de memoria
         
@@ -641,6 +671,8 @@ async def ask_db(
         )
         
     except Exception as e:
+        log_exception(e, context="ask_db - general error", 
+                     extra_data={"user_id": request.user_id, "message": request.message[:100]})
         print(f"❌ Error general procesando consulta: {e}")
         return DBAgentResponse(
             status="error",

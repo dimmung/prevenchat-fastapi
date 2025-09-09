@@ -1,5 +1,7 @@
 __pycache__/
 .env
 .venv/
-documents/
+documents/*
+!documents/.gitkeep
 chroma_db/
+errores.log

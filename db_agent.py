@@ -18,6 +18,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableLambda, RunnableWithFallbacks
 from langgraph.prebuilt import ToolNode
 from datetime import datetime
+from logger import log_exception, log_critical_exception, log_warning_message
 
 load_dotenv()
 
@@ -81,6 +82,8 @@ def db_query_tool(query: str) -> str:
             return str(result)
             
     except Exception as e:
+        log_exception(e, context="db_query_tool - SQL query execution failed", 
+                     extra_data={"query": query[:200] if query else "empty_query"})
         return f"Error executing query: {str(e)}. Please check your SQL syntax and try again."
 
 

@@ -5,6 +5,7 @@ from functools import wraps
 from fastapi import HTTPException, Request
 from typing import Callable, Any
 from dotenv import load_dotenv
+from logger import log_exception, log_critical_exception, log_warning_message
 
 load_dotenv()
 
@@ -60,7 +61,10 @@ async def validate_token_auth(request: Request) -> bool:
     try:
         # Convert timestamp to integer
         received_timestamp = int(timestamp_header)
-    except ValueError:
+    except ValueError as e:
+        log_warning_message("Invalid timestamp format received in authentication", 
+                           context="validate_token_auth - timestamp parsing", 
+                           extra_data={"timestamp_header": timestamp_header, "token_header_present": bool(token_header)})
         raise HTTPException(
             status_code=401,
             detail={

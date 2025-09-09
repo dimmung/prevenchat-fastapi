@@ -16,6 +16,7 @@ from langchain import hub
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 from langgraph.graph import END, StateGraph, START
+from logger import log_exception, log_critical_exception, log_warning_message
 
 load_dotenv()
 
@@ -89,6 +90,8 @@ class RAGAgent:
             return True
             
         except Exception as e:
+            log_critical_exception(e, context="RAGAgent.initialize - critical failure during initialization", 
+                                 extra_data={"persist_directory": self.persist_directory, "documents_path": self.documents_path})
             print(f"❌ Error inicializando agente RAG: {e}")
             return False
     
@@ -142,6 +145,8 @@ class RAGAgent:
                 documents.extend(chunks)
                 
             except Exception as e:
+                log_exception(e, context="RAGAgent._load_documents - processing individual PDF", 
+                             extra_data={"pdf_path": pdf_path, "category": category if 'category' in locals() else "unknown"})
                 print(f"❌ Error procesando {pdf_path}: {e}")
                 continue
         
@@ -241,6 +246,8 @@ class RAGAgent:
                 else:
                     print("🗑️ Vectorstore ya estaba vacía")
             except Exception as delete_error:
+                log_exception(delete_error, context="RAGAgent.reload_documents - error cleaning vectorstore", 
+                             extra_data={"operation": "delete_collection_contents"})
                 print(f"⚠️ Error al limpiar vectorstore: {delete_error}")
                 # Si falla el delete, intentar recrear completamente la colección
                 try:
@@ -256,6 +263,8 @@ class RAGAgent:
                     )
                     print("✅ Vectorstore recreada correctamente")
                 except Exception as recreate_error:
+                    log_exception(recreate_error, context="RAGAgent.reload_documents - error recreating vectorstore", 
+                                 extra_data={"operation": "recreate_collection", "collection_name": collection_name if 'collection_name' in locals() else "unknown"})
                     print(f"❌ Error recreando vectorstore: {recreate_error}")
                     raise recreate_error
             
@@ -290,6 +299,8 @@ class RAGAgent:
             }
             
         except Exception as e:
+            log_exception(e, context="RAGAgent.reload_documents - general failure in full reload", 
+                         extra_data={"operation": "full_reload", "documents_before": docs_before if 'docs_before' in locals() else 0})
             print(f"❌ Error en recarga completa: {e}")
             return {
                 "status": "error",
@@ -404,6 +415,8 @@ class RAGAgent:
             }
             
         except Exception as e:
+            log_exception(e, context="RAGAgent.add_document_to_category - error during incremental upload", 
+                         extra_data={"category": category, "filename": filename, "file_path": file_path if 'file_path' in locals() else "unknown"})
             print(f"❌ Error en upload incremental: {e}")
             # Si hay error, intentar limpiar el archivo guardado
             try:
