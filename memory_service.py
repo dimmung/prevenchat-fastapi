@@ -13,7 +13,6 @@ from typing import List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from models import AgentsMessageHistory
-from logger import log_exception
 
 class MemoryService:
     """
@@ -43,7 +42,13 @@ class MemoryService:
         NOTA IMPORTANTE: Solo recupera los últimos 'limit' mensajes para el contexto del agente.
         Todos los mensajes permanecen en la base de datos sin borrar.
         """
-        log_exception(db)
+        print()
+        print(f"🔍 DEBUG - Buscando historial para user_id: {user_id}, agent_type: {agent_type}, limit: {limit}")
+        print(f"🗄️ DEBUG - Objeto DB: {db}")
+        print(f"🗄️ DEBUG - Tipo de DB: {type(db)}")
+        print(f"🗄️ DEBUG - DB bind: {db.bind}")
+        print(f"🗄️ DEBUG - DB is_active: {db.is_active}")
+        
         messages = db.query(AgentsMessageHistory)\
             .filter(
                 and_(
@@ -55,9 +60,14 @@ class MemoryService:
             .limit(limit)\
             .all()
         
+        print(f"📊 DEBUG - Mensajes encontrados en DB: {len(messages)}")
+        for i, msg in enumerate(messages):
+            print(f"  [{i+1}] {msg.role}: {msg.content[:100]}{'...' if len(msg.content) > 100 else ''} (timestamp: {msg.timestamp})")
+        
         # Revertir para orden cronológico
         messages.reverse()
         
+        print(f"🔄 DEBUG - Mensajes después de revertir: {len(messages)}")
         return [(msg.role, msg.content) for msg in messages]
     
     @staticmethod
