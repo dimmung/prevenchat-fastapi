@@ -14,67 +14,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from models import AgentsMessageHistory
 from logger import log_warning_message
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class MemoryService:
     """
     Servicio simple para manejar memoria del agente DB
     """
-    
-    @staticmethod
-    def debug_database_config():
-        """
-        Debug function to log database configuration
-        """
-        try:
-            # Get environment variables
-            db_name = os.getenv("POSTGRESQL_NAME", "NOT_SET")
-            db_user = os.getenv("POSTGRESQL_USER", "NOT_SET")
-            db_password = os.getenv("POSTGRESQL_PASSWORD", "NOT_SET")
-            db_host = os.getenv("POSTGRESQL_HOST", "NOT_SET")
-            db_port = os.getenv("POSTGRESQL_PORT", "NOT_SET")
-            
-            # Create database URL (without password for security)
-            db_url_safe = f"postgresql://{db_user}:***@{db_host}:{db_port}/{db_name}"
-            
-            log_warning_message(
-                "Configuración de base de datos",
-                context="debug_database_config",
-                extra_data={
-                    "database_name": db_name,
-                    "database_user": db_user,
-                    "database_password": "***" if db_password != "NOT_SET" else "NOT_SET",
-                    "database_host": db_host,
-                    "database_port": db_port,
-                    "database_url_safe": db_url_safe,
-                    "env_file_loaded": os.path.exists(".env")
-                }
-            )
-            
-            return {
-                "database_name": db_name,
-                "database_user": db_user,
-                "database_host": db_host,
-                "database_port": db_port,
-                "all_vars_set": all([
-                    db_name != "NOT_SET",
-                    db_user != "NOT_SET", 
-                    db_password != "NOT_SET",
-                    db_host != "NOT_SET",
-                    db_port != "NOT_SET"
-                ])
-            }
-            
-        except Exception as e:
-            log_warning_message(
-                f"Error al obtener configuración de DB: {str(e)}",
-                context="debug_database_config",
-                extra_data={"error_type": type(e).__name__}
-            )
-            return {"error": str(e)}
     
     @staticmethod
     def save_message(db: Session, user_id: str, agent_type: str, role: str, content: str):
@@ -100,9 +44,6 @@ class MemoryService:
         Todos los mensajes permanecen en la base de datos sin borrar.
         """
         try:
-            # Debug database configuration first
-            MemoryService.debug_database_config()
-            
             # Log debug information using the logger system
             log_warning_message(
                 f"Buscando historial para user_id: {user_id}, agent_type: {agent_type}, limit: {limit}",
