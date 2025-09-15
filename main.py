@@ -6,7 +6,7 @@ from langgraph.errors import GraphRecursionError
 from models import get_db, DBAgentRequest, DBAgentResponse, RAGAgentRequest, RAGAgentResponse, DocumentUploadResponse
 from memory_service import MemoryService
 from auth import auth_dependency
-from logger import log_exception, log_critical_exception, log_warning_message
+from logger import log_exception, log_critical_exception, log_warning_message, log_info_message, log_success_message, log_debug_message
 import re
 
 app = FastAPI(
@@ -19,17 +19,17 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     """Inicializa el agente RAG al arrancar la aplicación"""
-    print("🚀 Iniciando aplicación...")
+    log_info_message("Starting application...", context="startup_event")
     try:
         success = initialize_rag_agent()
         if success:
-            print("✅ Agente RAG inicializado correctamente")
+            log_success_message("RAG agent initialized correctly", context="startup_event")
         else:
-            print("❌ Error inicializando agente RAG")
+            log_warning_message("Error initializing RAG agent", context="startup_event")
     except Exception as e:
         log_critical_exception(e, context="startup_event - initializing RAG agent", 
                              extra_data={"event": "app_startup"})
-        print(f"❌ Error crítico inicializando agente RAG: {e}")
+        log_warning_message(f"Critical error initializing RAG agent: {e}", context="startup_event")
 
 # RAG Agent Urls
 @app.post("/api/rag/ask", response_model=RAGAgentResponse)
@@ -52,7 +52,8 @@ async def ask_rag(
     MAX_HISTORY_LENGTH = 5
     
     try:
-        print(f"🔍 Procesando consulta RAG para usuario {request.user_id}: {request.message}")
+        log_debug_message(f"Processing RAG query for user {request.user_id}: {request.message}", 
+                         context="ask_rag", extra_data={"user_id": request.user_id})
         
         # 1. Obtener el agente RAG
         try:
@@ -78,7 +79,8 @@ async def ask_rag(
             limit=MAX_HISTORY_LENGTH
         )
         
-        print(f"📝 Historial RAG ({len(chat_history)} mensajes): {len(chat_history)} históricos")
+        log_debug_message(f"RAG history ({len(chat_history)} messages): {len(chat_history)} historical", 
+                         context="ask_rag", extra_data={"user_id": request.user_id, "history_length": len(chat_history)})
         
         # 3. Procesar la consulta con el agente RAG
         result = rag_agent.ask(
@@ -98,7 +100,8 @@ async def ask_rag(
         # 5. Extraer la respuesta del agente
         final_response = result["data"]["response"]
         
-        print(f"✅ Respuesta RAG generada para usuario {request.user_id}: {final_response[:100]}...")
+        log_success_message(f"RAG response generated for user {request.user_id}: {final_response[:100]}...", 
+                           context="ask_rag", extra_data={"user_id": request.user_id})
         
         # 6. Guardar la pregunta y respuesta en el historial
         try:
@@ -126,12 +129,14 @@ async def ask_rag(
                 user_id=request.user_id,
                 agent_type="RAG"
             )
-            print(f"📊 Usuario {request.user_id} - Total mensajes RAG: {total_rag_messages}")
+            log_info_message(f"User {request.user_id} - Total RAG messages: {total_rag_messages}", 
+                           context="ask_rag", extra_data={"user_id": request.user_id, "total_messages": total_rag_messages})
                 
         except Exception as memory_error:
             log_exception(memory_error, context="ask_rag - saving to memory", 
                          extra_data={"user_id": request.user_id, "operation": "save_message"})
-            print(f"⚠️ Error al guardar en memoria RAG: {memory_error}")
+            log_warning_message(f"Error saving to RAG memory: {memory_error}", 
+                              context="ask_rag", extra_data={"user_id": request.user_id})
             # No fallar la respuesta si hay error de memoria
         
         return RAGAgentResponse(
@@ -150,7 +155,8 @@ async def ask_rag(
     except Exception as e:
         log_exception(e, context="ask_rag - general error", 
                      extra_data={"user_id": request.user_id, "message": request.message[:100]})
-        print(f"❌ Error general procesando consulta RAG: {e}")
+        log_warning_message(f"General error processing RAG query: {e}", 
+                          context="ask_rag", extra_data={"user_id": request.user_id})
         return RAGAgentResponse(
             status="error",
             message=f"Error procesando la consulta RAG: {str(e)}",
@@ -187,7 +193,8 @@ async def upload_document_rag(
     📋 Uso recomendado: Para añadir documentos nuevos día a día
     """
     try:
-        print(f"📄 Recibiendo upload: {file.filename} en categoría '{category}'")
+        log_info_message(f"Receiving upload: {file.filename} in category '{category}'", 
+                        context="upload_document_rag", extra_data={"filename": file.filename, "category": category})
         
         # 1. Validaciones básicas
         if not file.filename:
@@ -274,7 +281,8 @@ async def upload_document_rag(
     except Exception as e:
         log_exception(e, context="upload_document_rag - general error", 
                      extra_data={"category": category, "filename": file.filename if file and file.filename else "unknown"})
-        print(f"❌ Error general en upload de documento: {e}")
+        log_warning_message(f"General error in document upload: {e}", 
+                          context="upload_document_rag", extra_data={"category": category})
         return DocumentUploadResponse(
             status="error",
             message=f"Error procesando el archivo: {str(e)}",
@@ -311,7 +319,7 @@ async def reload_documents_rag(
         DocumentUploadResponse: Resultado de la recarga completa
     """
     try:
-        print("🔄 Solicitud de recarga de documentos recibida")
+        log_info_message("Document reload request received", context="reload_documents_rag")
         
         # 1. Obtener el agente RAG
         try:
@@ -341,7 +349,7 @@ async def reload_documents_rag(
     except Exception as e:
         log_exception(e, context="reload_documents_rag - general error", 
                      extra_data={"operation": "reload_documents"})
-        print(f"❌ Error general en recarga de documentos: {e}")
+        log_warning_message(f"General error in document reload: {e}", context="reload_documents_rag")
         return DocumentUploadResponse(
             status="error",
             message=f"Error recargando documentos: {str(e)}",
@@ -423,7 +431,7 @@ async def get_rag_stats(
     except Exception as e:
         log_exception(e, context="get_rag_stats - general error", 
                      extra_data={"operation": "get_stats"})
-        print(f"❌ Error obteniendo estadísticas RAG: {e}")
+        log_warning_message(f"Error getting RAG stats: {e}", context="get_rag_stats")
         return DocumentUploadResponse(
             status="error",
             message=f"Error obteniendo estadísticas: {str(e)}",
@@ -468,7 +476,8 @@ async def delete_document_rag(
         DocumentUploadResponse: Resultado de la eliminación
     """
     try:
-        print(f"🗑️ Solicitud de eliminación: {filename} de categoría '{category}'")
+        log_info_message(f"Delete request: {filename} from category '{category}'", 
+                        context="delete_document_rag", extra_data={"filename": filename, "category": category})
         
         # 1. Validaciones básicas
         if not filename:
@@ -537,7 +546,8 @@ async def delete_document_rag(
         log_exception(e, context="delete_document_rag - general error", 
                      extra_data={"category": category if 'category' in locals() else "unknown", 
                                 "filename": filename if 'filename' in locals() else "unknown"})
-        print(f"❌ Error general en eliminación de documento: {e}")
+        log_warning_message(f"General error in document deletion: {e}", 
+                          context="delete_document_rag", extra_data={"category": category if 'category' in locals() else "unknown"})
         return DocumentUploadResponse(
             status="error",
             message=f"Error eliminando el documento: {str(e)}",
@@ -571,7 +581,8 @@ async def ask_db(
     MAX_HISTORY_LENGTH = 5
     
     try:
-        print(f"🔍 Procesando consulta para usuario {request.user_id}: {request.message}")
+        log_debug_message(f"Processing query for user {request.user_id}: {request.message}", 
+                         context="ask_db", extra_data={"user_id": request.user_id})
         
         # 1. Recuperar historial de chat para el agente DB
         chat_history = MemoryService.get_chat_history(
@@ -585,13 +596,15 @@ async def ask_db(
         current_question = ("user", request.message)
         messages_for_agent = chat_history + [current_question]
         
-        print(f"📝 Mensajes para DB Agent ({len(messages_for_agent)}): {len(chat_history)} históricos + 1 actual")
+        log_debug_message(f"Messages for DB Agent ({len(messages_for_agent)}): {len(chat_history)} historical + 1 current", 
+                         context="ask_db", extra_data={"user_id": request.user_id, "total_messages": len(messages_for_agent)})
         
         # 3. Configuración para el agente con límites conservadores
         recursion_limit = 10
         config = request.config.copy()
         
-        print(f"⚙️ Límite de recursión establecido: {recursion_limit}")
+        log_debug_message(f"Recursion limit set: {recursion_limit}", 
+                         context="ask_db", extra_data={"user_id": request.user_id, "recursion_limit": recursion_limit})
         
         # 4. Invocar el agente LangGraph con manejo de errores de recursión
         try:
@@ -604,7 +617,8 @@ async def ask_db(
         except GraphRecursionError as e:
             log_exception(e, context="ask_db - recursion limit reached", 
                          extra_data={"user_id": request.user_id, "message": request.message[:100], "recursion_limit": recursion_limit})
-            print(f"❌ Error de recursión detectado: {e}")
+            log_warning_message(f"Recursion error detected: {e}", 
+                              context="ask_db", extra_data={"user_id": request.user_id})
             return DBAgentResponse(
                 status="error",
                 message="El agente ha alcanzado el límite máximo de iteraciones. Por favor, intenta reformular tu pregunta de manera más específica.",
@@ -624,7 +638,8 @@ async def ask_db(
             else:
                 final_response = str(last_message)
         
-        print(f"✅ Respuesta generada para usuario {request.user_id}: {final_response[:100]}...")
+        log_success_message(f"Response generated for user {request.user_id}: {final_response[:100]}...", 
+                           context="ask_db", extra_data={"user_id": request.user_id})
         
         # 6. Guardar la pregunta y respuesta en el historial
         try:
@@ -652,12 +667,14 @@ async def ask_db(
                 user_id=request.user_id,
                 agent_type="DB"
             )
-            print(f"📊 Usuario {request.user_id} - Total mensajes DB: {total_db_messages}")
+            log_info_message(f"User {request.user_id} - Total DB messages: {total_db_messages}", 
+                           context="ask_db", extra_data={"user_id": request.user_id, "total_messages": total_db_messages})
                 
         except Exception as memory_error:
             log_exception(memory_error, context="ask_db - saving to memory", 
                          extra_data={"user_id": request.user_id, "operation": "save_message"})
-            print(f"⚠️ Error al guardar en memoria: {memory_error}")
+            log_warning_message(f"Error saving to memory: {memory_error}", 
+                              context="ask_db", extra_data={"user_id": request.user_id})
             # No fallar la respuesta si hay error de memoria
         
         return DBAgentResponse(
@@ -674,7 +691,8 @@ async def ask_db(
     except Exception as e:
         log_exception(e, context="ask_db - general error", 
                      extra_data={"user_id": request.user_id, "message": request.message[:100]})
-        print(f"❌ Error general procesando consulta: {e}")
+        log_warning_message(f"General error processing query: {e}", 
+                          context="ask_db", extra_data={"user_id": request.user_id})
         return DBAgentResponse(
             status="error",
             message=f"Error procesando la consulta: {str(e)}",

@@ -34,7 +34,7 @@ class ErrorLogger:
         """Configura el logger con rotación automática por líneas."""
         # Crear el logger principal
         self._logger = logging.getLogger('prevenchat_errors')
-        self._logger.setLevel(logging.ERROR)
+        self._logger.setLevel(logging.DEBUG)
         
         # Evitar duplicar handlers si ya existen
         if self._logger.handlers:
@@ -134,6 +134,60 @@ class ErrorLogger:
             warning_message = f"{warning_message} | Extra: {extra_info}"
         
         self._logger.warning(warning_message)
+    
+    def log_info(self, 
+                message: str, 
+                context: Optional[str] = None,
+                extra_data: Optional[Dict[str, Any]] = None) -> None:
+        """Registra un mensaje informativo."""
+        if self._logger is None:
+            self._setup_logger()
+        
+        info_message = message
+        if context:
+            info_message = f"{context} | {info_message}"
+        
+        if extra_data:
+            extra_info = " | ".join([f"{k}: {v}" for k, v in extra_data.items()])
+            info_message = f"{info_message} | Extra: {extra_info}"
+        
+        self._logger.info(info_message)
+    
+    def log_success(self, 
+                   message: str, 
+                   context: Optional[str] = None,
+                   extra_data: Optional[Dict[str, Any]] = None) -> None:
+        """Registra un mensaje de éxito."""
+        if self._logger is None:
+            self._setup_logger()
+        
+        success_message = f"✅ {message}"
+        if context:
+            success_message = f"{context} | {success_message}"
+        
+        if extra_data:
+            extra_info = " | ".join([f"{k}: {v}" for k, v in extra_data.items()])
+            success_message = f"{success_message} | Extra: {extra_info}"
+        
+        self._logger.info(success_message)
+    
+    def log_debug(self, 
+                 message: str, 
+                 context: Optional[str] = None,
+                 extra_data: Optional[Dict[str, Any]] = None) -> None:
+        """Registra un mensaje de debug."""
+        if self._logger is None:
+            self._setup_logger()
+        
+        debug_message = f"🔍 {message}"
+        if context:
+            debug_message = f"{context} | {debug_message}"
+        
+        if extra_data:
+            extra_info = " | ".join([f"{k}: {v}" for k, v in extra_data.items()])
+            debug_message = f"{debug_message} | Extra: {extra_info}"
+        
+        self._logger.debug(debug_message)
 
 
 # Instancia global del logger
@@ -170,6 +224,24 @@ def log_warning_message(message: str,
                        extra_data: Optional[Dict[str, Any]] = None) -> None:
     """Función de conveniencia para registrar warnings."""
     error_logger.log_warning(message, context, extra_data)
+
+def log_info_message(message: str, 
+                    context: Optional[str] = None,
+                    extra_data: Optional[Dict[str, Any]] = None) -> None:
+    """Función de conveniencia para registrar mensajes informativos."""
+    error_logger.log_info(message, context, extra_data)
+
+def log_success_message(message: str, 
+                       context: Optional[str] = None,
+                       extra_data: Optional[Dict[str, Any]] = None) -> None:
+    """Función de conveniencia para registrar mensajes de éxito."""
+    error_logger.log_success(message, context, extra_data)
+
+def log_debug_message(message: str, 
+                     context: Optional[str] = None,
+                     extra_data: Optional[Dict[str, Any]] = None) -> None:
+    """Función de conveniencia para registrar mensajes de debug."""
+    error_logger.log_debug(message, context, extra_data)
 
 def get_error_stats() -> Dict[str, Any]:
     """
