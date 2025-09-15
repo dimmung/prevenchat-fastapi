@@ -13,6 +13,7 @@ from typing import List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from models import AgentsMessageHistory
+from logger import log_warning_message
 
 class MemoryService:
     """
@@ -42,12 +43,20 @@ class MemoryService:
         NOTA IMPORTANTE: Solo recupera los últimos 'limit' mensajes para el contexto del agente.
         Todos los mensajes permanecen en la base de datos sin borrar.
         """
-        print()
-        print(f"🔍 DEBUG - Buscando historial para user_id: {user_id}, agent_type: {agent_type}, limit: {limit}")
-        print(f"🗄️ DEBUG - Objeto DB: {db}")
-        print(f"🗄️ DEBUG - Tipo de DB: {type(db)}")
-        print(f"🗄️ DEBUG - DB bind: {db.bind}")
-        print(f"🗄️ DEBUG - DB is_active: {db.is_active}")
+        # Log debug information using the logger system
+        log_warning_message(
+            f"Buscando historial para user_id: {user_id}, agent_type: {agent_type}, limit: {limit}",
+            context="get_chat_history",
+            extra_data={
+                "user_id": user_id,
+                "agent_type": agent_type,
+                "limit": limit,
+                "db_object": str(db),
+                "db_type": str(type(db)),
+                "db_bind": str(db.bind) if hasattr(db, 'bind') else "N/A",
+                "db_is_active": str(db.is_active) if hasattr(db, 'is_active') else "N/A"
+            }
+        )
         
         messages = db.query(AgentsMessageHistory)\
             .filter(
@@ -60,14 +69,41 @@ class MemoryService:
             .limit(limit)\
             .all()
         
-        print(f"📊 DEBUG - Mensajes encontrados en DB: {len(messages)}")
+        # Log messages found in database
+        messages_info = []
         for i, msg in enumerate(messages):
-            print(f"  [{i+1}] {msg.role}: {msg.content[:100]}{'...' if len(msg.content) > 100 else ''} (timestamp: {msg.timestamp})")
+            messages_info.append({
+                "index": i+1,
+                "role": msg.role,
+                "content_preview": msg.content[:100] + ('...' if len(msg.content) > 100 else ''),
+                "timestamp": str(msg.timestamp),
+                "full_content_length": len(msg.content)
+            })
+        
+        log_warning_message(
+            f"Mensajes encontrados en DB: {len(messages)}",
+            context="get_chat_history",
+            extra_data={
+                "user_id": user_id,
+                "agent_type": agent_type,
+                "messages_count": len(messages),
+                "messages_details": messages_info
+            }
+        )
         
         # Revertir para orden cronológico
         messages.reverse()
         
-        print(f"🔄 DEBUG - Mensajes después de revertir: {len(messages)}")
+        log_warning_message(
+            f"Mensajes después de revertir: {len(messages)}",
+            context="get_chat_history",
+            extra_data={
+                "user_id": user_id,
+                "agent_type": agent_type,
+                "final_messages_count": len(messages)
+            }
+        )
+        
         return [(msg.role, msg.content) for msg in messages]
     
     @staticmethod
