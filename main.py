@@ -684,3 +684,70 @@ async def ask_db(
                 "error_details": str(e)
             }
         )
+
+# Debug endpoints
+@app.get("/api/debug/database")
+async def debug_database():
+    """
+    Endpoint de debug para verificar la configuración de la base de datos
+    """
+    try:
+        config = MemoryService.debug_database_config()
+        return {
+            "status": "success",
+            "message": "Configuración de base de datos obtenida",
+            "data": config
+        }
+    except Exception as e:
+        log_exception(e, context="debug_database_endpoint")
+        return {
+            "status": "error",
+            "message": f"Error obteniendo configuración: {str(e)}",
+            "data": {"error_type": type(e).__name__}
+        }
+
+@app.get("/api/debug/test-connection")
+async def test_database_connection(db: Session = Depends(get_db)):
+    """
+    Endpoint de debug para probar la conexión a la base de datos
+    """
+    try:
+        # Test basic connection
+        result = db.execute("SELECT 1 as test").fetchone()
+        
+        # Test table existence
+        table_check = db.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'agents_message_history'
+            ) as table_exists
+        """).fetchone()
+        
+        # Test table structure
+        columns = db.execute("""
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns 
+            WHERE table_name = 'agents_message_history'
+            ORDER BY ordinal_position
+        """).fetchall()
+        
+        return {
+            "status": "success",
+            "message": "Conexión a base de datos exitosa",
+            "data": {
+                "connection_test": result[0] if result else None,
+                "table_exists": table_check[0] if table_check else False,
+                "table_columns": [{"name": col[0], "type": col[1], "nullable": col[2]} for col in columns],
+                "total_columns": len(columns)
+            }
+        }
+    except Exception as e:
+        log_exception(e, context="test_database_connection")
+        return {
+            "status": "error",
+            "message": f"Error probando conexión: {str(e)}",
+            "data": {
+                "error_type": type(e).__name__,
+                "error_details": str(e)
+            }
+        }
