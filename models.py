@@ -19,7 +19,7 @@ DATABASE_PASSWORD = os.getenv("POSTGRESQL_PASSWORD")
 DATABASE_HOST = os.getenv("POSTGRESQL_HOST")
 DATABASE_PORT = os.getenv("POSTGRESQL_PORT")
 DATABASE_URL = f"postgresql://{DATABASE_USER}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
-
+print(f"DEBUG MEMORY_SERVICE: Intentando conectar con URI -> {DATABASE_URL}")   
 # SQLAlchemy setup
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
