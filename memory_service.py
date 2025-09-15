@@ -13,6 +13,7 @@ from typing import List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from models import AgentsMessageHistory
+from logger import log_exception
 
 class MemoryService:
     """
@@ -42,6 +43,7 @@ class MemoryService:
         NOTA IMPORTANTE: Solo recupera los últimos 'limit' mensajes para el contexto del agente.
         Todos los mensajes permanecen en la base de datos sin borrar.
         """
+        log_exception(db)
         messages = db.query(AgentsMessageHistory)\
             .filter(
                 and_(
