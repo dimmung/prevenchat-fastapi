@@ -588,17 +588,18 @@ async def ask_db(
         print(f"📝 Mensajes para DB Agent ({len(messages_for_agent)}): {len(chat_history)} históricos + 1 actual")
         
         # 3. Configuración para el agente con límites conservadores
-        recursion_limit = 7
+        recursion_limit = 10
         config = request.config.copy()
         
         print(f"⚙️ Límite de recursión establecido: {recursion_limit}")
         
         # 4. Invocar el agente LangGraph con manejo de errores de recursión
         try:
+            # Add recursion_limit to config instead of as a separate parameter
+            config_with_recursion = {**config, "recursion_limit": recursion_limit}
             result = db_agent_app.invoke(
                 {"messages": messages_for_agent},
-                recursion_limit=recursion_limit,
-                config=config
+                config=config_with_recursion
             )
         except GraphRecursionError as e:
             log_exception(e, context="ask_db - recursion limit reached", 
