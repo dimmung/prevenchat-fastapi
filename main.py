@@ -249,8 +249,8 @@ async def upload_document_rag(
                 }
             )
         
-        # 5. Verificar tamaño del archivo (máximo 20MB)
-        max_size = 20 * 1024 * 1024  # 20MB
+        # 5. Verificar tamaño del archivo (máximo 50MB)
+        max_size = 50 * 1024 * 1024  # 50MB
         if len(file_content) > max_size:
             return DocumentUploadResponse(
                 status="error",
