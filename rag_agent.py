@@ -1,6 +1,7 @@
 import os
 import glob
 import chromadb
+chromadb.config.Settings(anonymized_telemetry=False)
 from typing import List, Tuple, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
@@ -16,7 +17,7 @@ from langchain import hub
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 from langgraph.graph import END, StateGraph, START
-from logger import log_exception, log_critical_exception, log_warning_message
+from logger import log_exception, log_critical_exception, log_warning_message, log_info_message, log_success_message, log_debug_message
 
 load_dotenv()
 
@@ -50,7 +51,7 @@ class RAGAgent:
     def initialize(self) -> bool:
         """Inicializa el agente RAG con carga automática de documentos"""
         try:
-            print("🔄 Inicializando agente RAG...")
+            log_info_message("Initializing RAG agent...", context="RAGAgent.initialize")
             
             # 1. Configurar embeddings
             self.embeddings = OpenAIEmbeddings(
@@ -59,7 +60,8 @@ class RAGAgent:
             )
             
             # 2. Inicializar cliente Chroma persistente
-            chroma_client = chromadb.PersistentClient(path=self.persist_directory)
+            # chroma_client = chromadb.PersistentClient(path=self.persist_directory)
+            chroma_client = chromadb.HttpClient(host="localhost", port=9000)
             
             # 3. Crear/cargar vectorstore
             self.vectorstore = Chroma(
@@ -71,10 +73,10 @@ class RAGAgent:
             # 4. Cargar documentos si la colección está vacía
             collection_info = self.vectorstore._collection.count()
             if collection_info == 0:
-                print("📚 La colección está vacía. Cargando documentos...")
+                log_info_message("Collection is empty. Loading documents...", context="RAGAgent.initialize")
                 self._load_documents()
             else:
-                print(f"📚 Colección existente encontrada con {collection_info} documentos")
+                log_info_message(f"Existing collection found with {collection_info} documents", context="RAGAgent.initialize", extra_data={"document_count": collection_info})
             
             # 5. Configurar retriever
             self.retriever = self.vectorstore.as_retriever(
@@ -86,13 +88,13 @@ class RAGAgent:
             self._build_rag_graph()
             
             self.is_initialized = True
-            print("✅ Agente RAG inicializado correctamente")
+            log_success_message("RAG agent initialized correctly", context="RAGAgent.initialize")
             return True
             
         except Exception as e:
             log_critical_exception(e, context="RAGAgent.initialize - critical failure during initialization", 
                                  extra_data={"persist_directory": self.persist_directory, "documents_path": self.documents_path})
-            print(f"❌ Error inicializando agente RAG: {e}")
+            log_warning_message(f"Error initializing RAG agent: {e}", context="RAGAgent.initialize")
             return False
     
     def _load_documents(self):
@@ -100,17 +102,17 @@ class RAGAgent:
         documents = []
         
         if not os.path.exists(self.documents_path):
-            print(f"⚠️ Carpeta {self.documents_path} no existe")
+            log_warning_message(f"Documents folder {self.documents_path} does not exist", context="RAGAgent._load_documents", extra_data={"documents_path": self.documents_path})
             return
         
         # Buscar PDFs en todas las subcarpetas
         pdf_files = glob.glob(os.path.join(self.documents_path, "**", "*.pdf"), recursive=True)
         
         if not pdf_files:
-            print(f"⚠️ No se encontraron archivos PDF en {self.documents_path}")
+            log_warning_message(f"No PDF files found in {self.documents_path}", context="RAGAgent._load_documents", extra_data={"documents_path": self.documents_path})
             return
         
-        print(f"📄 Encontrados {len(pdf_files)} archivos PDF")
+        log_info_message(f"Found {len(pdf_files)} PDF files", context="RAGAgent._load_documents", extra_data={"pdf_count": len(pdf_files)})
         
         # Configurar text splitter
         text_splitter = RecursiveCharacterTextSplitter(
@@ -121,7 +123,7 @@ class RAGAgent:
         
         for pdf_path in pdf_files:
             try:
-                print(f"📖 Procesando: {pdf_path}")
+                log_debug_message(f"Processing: {pdf_path}", context="RAGAgent._load_documents", extra_data={"pdf_path": pdf_path})
                 
                 # Determinar categoría basada en la estructura de carpetas
                 relative_path = os.path.relpath(pdf_path, self.documents_path)
@@ -147,15 +149,15 @@ class RAGAgent:
             except Exception as e:
                 log_exception(e, context="RAGAgent._load_documents - processing individual PDF", 
                              extra_data={"pdf_path": pdf_path, "category": category if 'category' in locals() else "unknown"})
-                print(f"❌ Error procesando {pdf_path}: {e}")
+                log_warning_message(f"Error processing {pdf_path}: {e}", context="RAGAgent._load_documents", extra_data={"pdf_path": pdf_path})
                 continue
         
         if documents:
-            print(f"📚 Añadiendo {len(documents)} documentos a la vectorstore...")
+            log_info_message(f"Adding {len(documents)} documents to vectorstore...", context="RAGAgent._load_documents", extra_data={"document_count": len(documents)})
             self.vectorstore.add_documents(documents)
-            print("✅ Documentos cargados exitosamente")
+            log_success_message("Documents loaded successfully", context="RAGAgent._load_documents")
         else:
-            print("⚠️ No se pudieron cargar documentos")
+            log_warning_message("No documents could be loaded", context="RAGAgent._load_documents")
     
     def _build_rag_graph(self):
         """Construye el grafo LangGraph para el agente RAG"""
@@ -228,12 +230,12 @@ class RAGAgent:
         💡 Para uso normal, use add_document_to_category() que es incremental
         """
         try:
-            print("⚠️  INICIANDO RECARGA COMPLETA - OPERACIÓN DE MANTENIMIENTO")
-            print("🔄 Esta operación destruirá y reconstruirá toda la vectorstore...")
+            log_warning_message("Starting complete reload - MAINTENANCE OPERATION", context="RAGAgent.reload_documents")
+            log_info_message("This operation will destroy and rebuild the entire vectorstore...", context="RAGAgent.reload_documents")
             
             # Obtener conteo antes de la limpieza
             docs_before = self.vectorstore._collection.count()
-            print(f"📊 Documentos antes de la limpieza: {docs_before}")
+            log_info_message(f"Documents before cleanup: {docs_before}", context="RAGAgent.reload_documents", extra_data={"docs_before": docs_before})
             
             # Limpiar la colección existente
             # ChromaDB requiere especificar qué eliminar
@@ -242,18 +244,18 @@ class RAGAgent:
                 all_data = self.vectorstore._collection.get()
                 if all_data['ids']:
                     self.vectorstore._collection.delete(ids=all_data['ids'])
-                    print(f"🗑️ Vectorstore completamente limpiada ({len(all_data['ids'])} documentos eliminados)")
+                    log_info_message(f"Vectorstore completely cleaned ({len(all_data['ids'])} documents deleted)", context="RAGAgent.reload_documents", extra_data={"deleted_count": len(all_data['ids'])})
                 else:
-                    print("🗑️ Vectorstore ya estaba vacía")
+                    log_info_message("Vectorstore was already empty", context="RAGAgent.reload_documents")
             except Exception as delete_error:
                 log_exception(delete_error, context="RAGAgent.reload_documents - error cleaning vectorstore", 
                              extra_data={"operation": "delete_collection_contents"})
-                print(f"⚠️ Error al limpiar vectorstore: {delete_error}")
+                log_warning_message(f"Error cleaning vectorstore: {delete_error}", context="RAGAgent.reload_documents")
                 # Si falla el delete, intentar recrear completamente la colección
                 try:
                     collection_name = self.vectorstore._collection.name
                     self.vectorstore._client.delete_collection(collection_name)
-                    print("🗑️ Colección eliminada, recreando...")
+                    log_info_message("Collection deleted, recreating...", context="RAGAgent.reload_documents", extra_data={"collection_name": collection_name})
                     
                     # Recrear la vectorstore desde cero
                     self.vectorstore = Chroma(
@@ -261,15 +263,15 @@ class RAGAgent:
                         collection_name=collection_name,
                         embedding_function=self.embeddings,
                     )
-                    print("✅ Vectorstore recreada correctamente")
+                    log_success_message("Vectorstore recreated correctly", context="RAGAgent.reload_documents")
                 except Exception as recreate_error:
                     log_exception(recreate_error, context="RAGAgent.reload_documents - error recreating vectorstore", 
                                  extra_data={"operation": "recreate_collection", "collection_name": collection_name if 'collection_name' in locals() else "unknown"})
-                    print(f"❌ Error recreando vectorstore: {recreate_error}")
+                    log_warning_message(f"Error recreating vectorstore: {recreate_error}", context="RAGAgent.reload_documents")
                     raise recreate_error
             
             # Recargar TODOS los documentos desde la carpeta
-            print("📚 Re-procesando TODOS los documentos desde la carpeta...")
+            log_info_message("Re-processing ALL documents from folder...", context="RAGAgent.reload_documents")
             self._load_documents()
             
             # Actualizar el retriever
@@ -281,10 +283,11 @@ class RAGAgent:
             # Contar documentos después de la recarga
             docs_after = self.vectorstore._collection.count()
             
-            print(f"✅ RECARGA COMPLETA FINALIZADA:")
-            print(f"   - Documentos antes: {docs_before}")
-            print(f"   - Documentos después: {docs_after}")
-            print(f"   - Operación: MANTENIMIENTO COMPLETO")
+            log_success_message("Complete reload finished", context="RAGAgent.reload_documents", extra_data={
+                "docs_before": docs_before,
+                "docs_after": docs_after,
+                "operation": "MAINTENANCE_COMPLETE"
+            })
             
             return {
                 "status": "success",
@@ -301,7 +304,7 @@ class RAGAgent:
         except Exception as e:
             log_exception(e, context="RAGAgent.reload_documents - general failure in full reload", 
                          extra_data={"operation": "full_reload", "documents_before": docs_before if 'docs_before' in locals() else 0})
-            print(f"❌ Error en recarga completa: {e}")
+            log_warning_message(f"Error in complete reload: {e}", context="RAGAgent.reload_documents")
             return {
                 "status": "error",
                 "message": f"Error en recarga completa de documentos: {str(e)}",
@@ -317,7 +320,7 @@ class RAGAgent:
         NO destruye la vectorstore existente, solo añade el nuevo documento
         """
         try:
-            print(f"📄 Iniciando upload incremental: {filename} → {category}")
+            log_info_message(f"Starting incremental upload: {filename} → {category}", context="RAGAgent.add_document_to_category", extra_data={"filename": filename, "category": category})
             
             # Validar que es un PDF
             if not filename.lower().endswith('.pdf'):
@@ -330,7 +333,7 @@ class RAGAgent:
             # Crear directorio de categoría si no existe
             category_path = os.path.join(self.documents_path, category)
             os.makedirs(category_path, exist_ok=True)
-            print(f"📁 Directorio de categoría: {category_path}")
+            log_debug_message(f"Category directory: {category_path}", context="RAGAgent.add_document_to_category", extra_data={"category_path": category_path})
             
             # Definir ruta del archivo
             file_path = os.path.join(category_path, filename)
@@ -350,7 +353,7 @@ class RAGAgent:
             # Guardar el archivo físicamente
             with open(file_path, 'wb') as f:
                 f.write(file_content)
-            print(f"💾 Archivo guardado físicamente: {file_path}")
+            log_debug_message(f"File saved physically: {file_path}", context="RAGAgent.add_document_to_category", extra_data={"file_path": file_path})
             
             # Obtener conteo antes del procesamiento
             docs_before = self.vectorstore._collection.count()
@@ -366,13 +369,13 @@ class RAGAgent:
             )
             
             # Cargar y dividir el PDF
-            print(f"📖 Procesando PDF: {file_path}")
+            log_debug_message(f"Processing PDF: {file_path}", context="RAGAgent.add_document_to_category", extra_data={"file_path": file_path})
             loader = PyPDFLoader(file_path)
             pages = loader.load()
             
             # Dividir en chunks
             chunks = text_splitter.split_documents(pages)
-            print(f"✂️ Documento dividido en {len(chunks)} chunks")
+            log_debug_message(f"Document divided into {len(chunks)} chunks", context="RAGAgent.add_document_to_category", extra_data={"chunks_count": len(chunks)})
             
             # Añadir metadatos de categoría y timestamp
             import time
@@ -388,17 +391,18 @@ class RAGAgent:
                 })
             
             # AÑADIR a la vectorstore existente (NO reemplazar)
-            print(f"🔄 Añadiendo {len(chunks)} chunks a vectorstore existente...")
+            log_info_message(f"Adding {len(chunks)} chunks to existing vectorstore...", context="RAGAgent.add_document_to_category", extra_data={"chunks_count": len(chunks)})
             self.vectorstore.add_documents(chunks)
             
             # Verificar que se añadieron correctamente
             docs_after = self.vectorstore._collection.count()
             chunks_added = docs_after - docs_before
             
-            print(f"✅ Upload incremental completado:")
-            print(f"   - Documentos antes: {docs_before}")
-            print(f"   - Documentos después: {docs_after}")
-            print(f"   - Chunks añadidos: {chunks_added}")
+            log_success_message("Incremental upload completed", context="RAGAgent.add_document_to_category", extra_data={
+                "docs_before": docs_before,
+                "docs_after": docs_after,
+                "chunks_added": chunks_added
+            })
             
             return {
                 "status": "success",
@@ -417,12 +421,12 @@ class RAGAgent:
         except Exception as e:
             log_exception(e, context="RAGAgent.add_document_to_category - error during incremental upload", 
                          extra_data={"category": category, "filename": filename, "file_path": file_path if 'file_path' in locals() else "unknown"})
-            print(f"❌ Error en upload incremental: {e}")
+            log_warning_message(f"Error in incremental upload: {e}", context="RAGAgent.add_document_to_category")
             # Si hay error, intentar limpiar el archivo guardado
             try:
                 if 'file_path' in locals() and os.path.exists(file_path):
                     os.remove(file_path)
-                    print(f"🗑️ Archivo limpiado tras error: {file_path}")
+                    log_debug_message(f"File cleaned after error: {file_path}", context="RAGAgent.add_document_to_category", extra_data={"file_path": file_path})
             except:
                 pass
                 
