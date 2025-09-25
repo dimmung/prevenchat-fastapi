@@ -61,7 +61,14 @@ class RAGAgent:
             
             # 2. Inicializar cliente Chroma persistente
             # chroma_client = chromadb.PersistentClient(path=self.persist_directory)
-            chroma_client = chromadb.HttpClient(host="localhost", port=9000)
+            try:
+                chroma_client = chromadb.HttpClient(host="localhost", port=9000)
+                # Test connection
+                chroma_client.heartbeat()
+                log_info_message("ChromaDB HTTP client connected successfully", context="RAGAgent.initialize", extra_data={"host": "localhost", "port": 9000})
+            except Exception as client_error:
+                log_warning_message(f"Failed to connect to ChromaDB HTTP client: {client_error}", context="RAGAgent.initialize")
+                log_info_message("Falling back to persistent client", context="RAGAgent.initialize")
             
             # 3. Crear/cargar vectorstore
             self.vectorstore = Chroma(
@@ -210,8 +217,51 @@ class RAGAgent:
     def _create_retrieve_function(self):
         """Crea función de recuperación personalizada que usa self.vectorstore"""
         def retrieve_with_self(state):
+            # Check connection health before retrieval
+            if hasattr(self.vectorstore._client, 'heartbeat'):
+                try:
+                    self.vectorstore._client.heartbeat()
+                except Exception as e:
+                    log_warning_message(f"ChromaDB connection check failed: {e}", context="RAGAgent._create_retrieve_function")
+                    # Try to reconnect
+                    try:
+                        self._reconnect_chromadb()
+                    except Exception as reconnect_error:
+                        log_warning_message(f"Failed to reconnect to ChromaDB: {reconnect_error}", context="RAGAgent._create_retrieve_function")
+            
             return retrieve_with_vectorstore(state, self.vectorstore)
         return retrieve_with_self
+    
+    def _reconnect_chromadb(self):
+        """Attempts to reconnect to ChromaDB"""
+        log_info_message("Attempting to reconnect to ChromaDB", context="RAGAgent._reconnect_chromadb")
+        try:
+            # Try HTTP client first
+            chroma_client = chromadb.HttpClient(host="localhost", port=9000)
+            chroma_client.heartbeat()
+            
+            # Recreate vectorstore with new client
+            self.vectorstore = Chroma(
+                client=chroma_client,
+                collection_name="rag_documents",
+                embedding_function=self.embeddings,
+            )
+            log_success_message("Successfully reconnected to ChromaDB HTTP client", context="RAGAgent._reconnect_chromadb")
+            
+        except Exception as http_error:
+            log_warning_message(f"HTTP client reconnection failed: {http_error}", context="RAGAgent._reconnect_chromadb")
+            # Fallback to persistent client
+            try:
+                chroma_client = chromadb.PersistentClient(path=self.persist_directory)
+                self.vectorstore = Chroma(
+                    client=chroma_client,
+                    collection_name="rag_documents",
+                    embedding_function=self.embeddings,
+                )
+                log_success_message("Fallback to persistent ChromaDB client successful", context="RAGAgent._reconnect_chromadb")
+            except Exception as persistent_error:
+                log_warning_message(f"Persistent client fallback failed: {persistent_error}", context="RAGAgent._reconnect_chromadb")
+                raise persistent_error
     
     def reload_documents(self) -> Dict[str, Any]:
         """
@@ -598,41 +648,70 @@ class RAGAgent:
                 "data": None
             }
         
-        try:
-            # Preparar estado inicial
-            initial_state = {
-                "question": question,
-                "generation": "",
-                "documents": [],
-                "attempts": 0,
-                "categories": [],
-                "chat_history": chat_history or [],
-                "input_type": "",
-                "needs_documents": True
-            }
-            
-            # Ejecutar el agente
-            result = self.app.invoke(initial_state)
-            
-            return {
-                "status": "success",
-                "message": "Consulta procesada correctamente",
-                "data": {
-                    "response": result.get("generation", "No se pudo generar una respuesta"),
-                    "user_query": question,
-                    "categories_used": result.get("categories", []),
-                    "documents_found": len(result.get("documents", [])),
-                    "input_type": result.get("input_type", "")
+        max_retries = 2
+        for retry_attempt in range(max_retries):
+            try:
+                log_debug_message(f"Processing RAG query (attempt {retry_attempt + 1}/{max_retries})", 
+                                context="RAGAgent.ask", 
+                                extra_data={"question": question[:100], "user_id": user_id, "retry": retry_attempt})
+                
+                # Preparar estado inicial
+                initial_state = {
+                    "question": question,
+                    "generation": "",
+                    "documents": [],
+                    "attempts": 0,
+                    "categories": [],
+                    "chat_history": chat_history or [],
+                    "input_type": "",
+                    "needs_documents": True
                 }
-            }
-            
-        except Exception as e:
-            log_warning_message(f"Error processing RAG query: {e}", context="RAGAgent.ask")
-            return {
-                "status": "error",
-                "message": f"Error procesando la consulta: {str(e)}",
-                "data": None
-            }
+                
+                # Ejecutar el agente
+                result = self.app.invoke(initial_state)
+                
+                return {
+                    "status": "success",
+                    "message": "Consulta procesada correctamente",
+                    "data": {
+                        "response": result.get("generation", "No se pudo generar una respuesta"),
+                        "user_query": question,
+                        "categories_used": result.get("categories", []),
+                        "documents_found": len(result.get("documents", [])),
+                        "input_type": result.get("input_type", "")
+                    }
+                }
+                
+            except Exception as e:
+                error_str = str(e)
+                is_connection_error = any(keyword in error_str.lower() for keyword in 
+                                        ["server disconnected", "connection", "timeout", "network"])
+                
+                log_warning_message(f"Error processing RAG query (attempt {retry_attempt + 1}): {e}", 
+                                  context="RAGAgent.ask", 
+                                  extra_data={"is_connection_error": is_connection_error, "retry": retry_attempt})
+                
+                # If it's a connection error and we have retries left, try to reconnect
+                if is_connection_error and retry_attempt < max_retries - 1:
+                    log_info_message(f"Connection error detected, attempting reconnection (retry {retry_attempt + 1})", 
+                                   context="RAGAgent.ask")
+                    try:
+                        self._reconnect_chromadb()
+                        continue  # Retry the operation
+                    except Exception as reconnect_error:
+                        log_warning_message(f"Reconnection failed: {reconnect_error}", context="RAGAgent.ask")
+                
+                # If it's the last attempt or not a connection error, return error
+                if retry_attempt == max_retries - 1:
+                    return {
+                        "status": "error",
+                        "message": f"Error procesando la consulta después de {max_retries} intentos: {str(e)}",
+                        "data": {
+                            "error_type": "connection_error" if is_connection_error else "processing_error",
+                            "attempts": max_retries,
+                            "last_error": str(e)
+                        }
+                    }
 
 # Instancia global del agente
 rag_agent_instance = RAGAgent()
@@ -932,22 +1011,72 @@ def retrieve_with_vectorstore(state, vectorstore):
     attempts = state.get("attempts", 0)
     chat_history = state.get("chat_history", [])
 
+    def safe_retrieve(retriever, question, context_info=""):
+        """Safely retrieve documents with retry logic for connection issues"""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                documents = retriever.invoke(question)
+                log_debug_message(f"Successfully retrieved {len(documents)} documents{context_info}", 
+                                context="retrieve_with_vectorstore", 
+                                extra_data={"doc_count": len(documents), "attempt": attempt + 1})
+                return documents
+            except Exception as e:
+                if "Server disconnected" in str(e) or "connection" in str(e).lower():
+                    log_warning_message(f"Connection error on attempt {attempt + 1}/{max_retries}: {e}", 
+                                      context="retrieve_with_vectorstore")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(1)  # Wait before retry
+                        continue
+                raise e
+        return []
+
     if categories:
         log_debug_message(f"Applying filter for categories: {categories}", context="retrieve_with_vectorstore", extra_data={"categories": categories})
-        try:
-            retriever_with_filter = vectorstore.as_retriever(
-                search_kwargs={'filter': {'category': {'$in': categories}}}
-            )
-            documents = retriever_with_filter.invoke(question)
-        except Exception as e:
-            log_warning_message(f"Error applying category filter during retrieval: {e}", context="retrieve_with_vectorstore")
-            log_debug_message("Falling back to retrieval without category filter", context="retrieve_with_vectorstore")
-            retriever_fallback = vectorstore.as_retriever(search_kwargs={"k": 4})
-            documents = retriever_fallback.invoke(question)
+        
+        # Try different filter formats for ChromaDB HTTP compatibility
+        filter_attempts = [
+            # Standard LangChain format
+            {'category': {'$in': categories}},
+            # Alternative format for ChromaDB HTTP
+            {'category': categories[0]} if len(categories) == 1 else None,
+            # Chroma native format
+            {"$or": [{"category": {"$eq": cat}} for cat in categories]} if len(categories) > 1 else None
+        ]
+        
+        documents = None
+        for i, filter_config in enumerate(filter_attempts):
+            if filter_config is None:
+                continue
+                
+            try:
+                log_debug_message(f"Trying filter format {i+1}: {filter_config}", 
+                                context="retrieve_with_vectorstore", 
+                                extra_data={"filter_attempt": i+1, "filter": str(filter_config)})
+                
+                retriever_with_filter = vectorstore.as_retriever(
+                    search_kwargs={'filter': filter_config, 'k': 5}
+                )
+                documents = safe_retrieve(retriever_with_filter, question, f" with category filter {categories}")
+                break
+                
+            except Exception as e:
+                log_debug_message(f"Filter format {i+1} failed: {e}", 
+                                context="retrieve_with_vectorstore", 
+                                extra_data={"filter_attempt": i+1, "error": str(e)})
+                continue
+        
+        # If all filter attempts failed, fallback to no filter
+        if documents is None:
+            log_warning_message("All category filter attempts failed, falling back to general retrieval", 
+                              context="retrieve_with_vectorstore")
+            retriever_fallback = vectorstore.as_retriever(search_kwargs={"k": 5})
+            documents = safe_retrieve(retriever_fallback, question, " (fallback - no filter)")
     else:
         log_debug_message("No categories specified, retrieving across all documents", context="retrieve_with_vectorstore")
-        retriever_general = vectorstore.as_retriever(search_kwargs={"k": 4})
-        documents = retriever_general.invoke(question)
+        retriever_general = vectorstore.as_retriever(search_kwargs={"k": 5})
+        documents = safe_retrieve(retriever_general, question)
 
     current_state = state.copy()
     current_state["documents"] = documents
