@@ -452,7 +452,7 @@ class RAGAgent:
             Dict con status, message y data sobre la eliminación
         """
         try:
-            print(f"🗑️ Iniciando eliminación: {filename} de categoría '{category}'")
+            log_info_message(f"Starting deletion: {filename} from category '{category}'", context="RAGAgent.delete_document", extra_data={"filename": filename, "category": category})
             
             # 1. Validar que es un PDF
             if not filename.lower().endswith('.pdf'):
@@ -499,14 +499,14 @@ class RAGAgent:
                 chunks_to_delete = all_data['ids']
                 
                 if chunks_to_delete:
-                    print(f"🔍 Encontrados {len(chunks_to_delete)} chunks a eliminar de vectorstore")
+                    log_info_message(f"Found {len(chunks_to_delete)} chunks to delete from vectorstore", context="RAGAgent.delete_document", extra_data={"chunks_count": len(chunks_to_delete)})
                     self.vectorstore._collection.delete(ids=chunks_to_delete)
-                    print(f"✅ {len(chunks_to_delete)} chunks eliminados de vectorstore")
+                    log_success_message(f"{len(chunks_to_delete)} chunks deleted from vectorstore", context="RAGAgent.delete_document", extra_data={"chunks_deleted": len(chunks_to_delete)})
                 else:
-                    print("⚠️ No se encontraron chunks en vectorstore para este documento")
+                    log_warning_message("No chunks found in vectorstore for this document", context="RAGAgent.delete_document")
                     
             except Exception as vectorstore_error:
-                print(f"❌ Error eliminando de vectorstore: {vectorstore_error}")
+                log_warning_message(f"Error deleting from vectorstore: {vectorstore_error}", context="RAGAgent.delete_document")
                 return {
                     "status": "error",
                     "message": f"Error eliminando chunks de vectorstore: {str(vectorstore_error)}",
@@ -521,9 +521,9 @@ class RAGAgent:
             # 6. Eliminar archivo físico
             try:
                 os.remove(file_path)
-                print(f"🗑️ Archivo físico eliminado: {file_path}")
+                log_debug_message(f"Physical file deleted: {file_path}", context="RAGAgent.delete_document", extra_data={"file_path": file_path})
             except Exception as file_error:
-                print(f"❌ Error eliminando archivo físico: {file_error}")
+                log_warning_message(f"Error deleting physical file: {file_error}", context="RAGAgent.delete_document")
                 return {
                     "status": "error",
                     "message": f"Error eliminando archivo físico: {str(file_error)}",
@@ -545,20 +545,21 @@ class RAGAgent:
             try:
                 if os.path.exists(category_path) and not os.listdir(category_path):
                     os.rmdir(category_path)
-                    print(f"📁 Carpeta de categoría vacía eliminada: {category_path}")
+                    log_debug_message(f"Empty category folder deleted: {category_path}", context="RAGAgent.delete_document", extra_data={"category_path": category_path})
                     category_deleted = True
                 else:
                     category_deleted = False
             except Exception as category_error:
-                print(f"⚠️ Error eliminando carpeta de categoría: {category_error}")
+                log_warning_message(f"Error deleting category folder: {category_error}", context="RAGAgent.delete_document")
                 category_deleted = False
             
-            print(f"✅ Eliminación completada:")
-            print(f"   - Documento: {filename}")
-            print(f"   - Categoría: {category}")
-            print(f"   - Chunks eliminados: {chunks_deleted}")
-            print(f"   - Vectorstore antes: {docs_before}")
-            print(f"   - Vectorstore después: {docs_after}")
+            log_success_message("Deletion completed", context="RAGAgent.delete_document", extra_data={
+                "filename": filename,
+                "category": category,
+                "chunks_deleted": chunks_deleted,
+                "docs_before": docs_before,
+                "docs_after": docs_after
+            })
             
             return {
                 "status": "success",
@@ -576,7 +577,7 @@ class RAGAgent:
             }
             
         except Exception as e:
-            print(f"❌ Error general eliminando documento: {e}")
+            log_warning_message(f"General error deleting document: {e}", context="RAGAgent.delete_document")
             return {
                 "status": "error",
                 "message": f"Error eliminando documento: {str(e)}",
@@ -626,7 +627,7 @@ class RAGAgent:
             }
             
         except Exception as e:
-            print(f"❌ Error procesando consulta RAG: {e}")
+            log_warning_message(f"Error processing RAG query: {e}", context="RAGAgent.ask")
             return {
                 "status": "error",
                 "message": f"Error procesando la consulta: {str(e)}",
@@ -809,7 +810,7 @@ def validate_user_input(state):
     """
     Validates user input to determine if it requires document search or can be answered directly.
     """
-    print("---VALIDATE USER INPUT---")
+    log_debug_message("Validating user input", context="validate_user_input")
     question = state["question"]
     chat_history = state.get("chat_history", [])
     
@@ -841,8 +842,7 @@ def validate_user_input(state):
         needs_documents = result.needs_documents
         simple_response = result.simple_response
         
-        print(f"---INPUT TYPE: {input_type}---")
-        print(f"---NEEDS DOCUMENTS: {needs_documents}---")
+        log_debug_message(f"Input type: {input_type}, needs documents: {needs_documents}", context="validate_user_input", extra_data={"input_type": input_type, "needs_documents": needs_documents})
         
         current_state = state.copy()
         current_state["input_type"] = input_type
@@ -851,12 +851,12 @@ def validate_user_input(state):
         # Si no necesita documentos, guardamos la respuesta directa
         if not needs_documents and simple_response:
             current_state["generation"] = simple_response
-            print("---DIRECT RESPONSE PROVIDED---")
+            log_debug_message("Direct response provided", context="validate_user_input")
         
         return current_state
         
     except Exception as e:
-        print(f"Error during input validation: {e}")
+        log_warning_message(f"Error during input validation: {e}", context="validate_user_input")
         # En caso de error, asumimos que es una pregunta que necesita documentos
         current_state = state.copy()
         current_state["input_type"] = "document_question"
@@ -867,7 +867,7 @@ def categorize_question(state):
     """
     Categorizes the user question based on available document categories.
     """
-    print("---CATEGORIZE QUESTION---")
+    log_debug_message("Categorizing question", context="categorize_question")
     question = state["question"]
     attempts = state.get("attempts", 0)
     chat_history = state.get("chat_history", [])
@@ -879,14 +879,14 @@ def categorize_question(state):
         try:
             available_categories = [d for d in os.listdir(documents_path) if os.path.isdir(os.path.join(documents_path, d))]
         except FileNotFoundError:
-            print(f"Error: El directorio de documentos '{documents_path}' no fue encontrado.")
+            log_warning_message(f"Documents directory '{documents_path}' not found", context="categorize_question", extra_data={"documents_path": documents_path})
             available_categories = []
         except Exception as e:
-             print(f"Error listando directorios en '{documents_path}': {e}")
+             log_warning_message(f"Error listing directories in '{documents_path}': {e}", context="categorize_question", extra_data={"documents_path": documents_path})
              available_categories = []
 
     if not available_categories:
-        print(f"No categories found in '{documents_path}'. Skipping categorization.")
+        log_warning_message(f"No categories found in '{documents_path}'. Skipping categorization.", context="categorize_question", extra_data={"documents_path": documents_path})
         # Devolvemos el estado sin categorías, el nodo retrieve manejará la ausencia
         return {**state, "categories": []}
 
@@ -908,14 +908,14 @@ def categorize_question(state):
     try:
         result = categorization_chain.invoke({"question": question})
         detected_categories = result.categories
-        print(f"---DETECTED CATEGORIES: {detected_categories}---")
+        log_debug_message(f"Detected categories: {detected_categories}", context="categorize_question", extra_data={"detected_categories": detected_categories})
         
         valid_detected_categories = [cat for cat in detected_categories if cat in available_categories]
         if len(valid_detected_categories) != len(detected_categories):
-            print("Warning: LLM returned categories not present in the available list.")
+            log_warning_message("LLM returned categories not present in the available list", context="categorize_question")
         
     except Exception as e:
-        print(f"Error during categorization LLM call: {e}")
+        log_warning_message(f"Error during categorization LLM call: {e}", context="categorize_question")
         valid_detected_categories = []
 
     current_state = state.copy()
@@ -926,26 +926,26 @@ def retrieve_with_vectorstore(state, vectorstore):
     """
     Retrieve documents based on the question and identified categories.
     """
-    print("---RETRIEVE DOCUMENTS---")
+    log_debug_message("Retrieving documents", context="retrieve_with_vectorstore")
     question = state["question"]
     categories = state.get("categories", [])
     attempts = state.get("attempts", 0)
     chat_history = state.get("chat_history", [])
 
     if categories:
-        print(f"--- Applying filter for categories: {categories} ---")
+        log_debug_message(f"Applying filter for categories: {categories}", context="retrieve_with_vectorstore", extra_data={"categories": categories})
         try:
             retriever_with_filter = vectorstore.as_retriever(
                 search_kwargs={'filter': {'category': {'$in': categories}}}
             )
             documents = retriever_with_filter.invoke(question)
         except Exception as e:
-            print(f"Error applying category filter during retrieval: {e}")
-            print("--- Falling back to retrieval without category filter ---")
+            log_warning_message(f"Error applying category filter during retrieval: {e}", context="retrieve_with_vectorstore")
+            log_debug_message("Falling back to retrieval without category filter", context="retrieve_with_vectorstore")
             retriever_fallback = vectorstore.as_retriever(search_kwargs={"k": 4})
             documents = retriever_fallback.invoke(question)
     else:
-        print("--- No categories specified, retrieving across all documents ---")
+        log_debug_message("No categories specified, retrieving across all documents", context="retrieve_with_vectorstore")
         retriever_general = vectorstore.as_retriever(search_kwargs={"k": 4})
         documents = retriever_general.invoke(question)
 
@@ -957,7 +957,7 @@ def generate(state):
     """
     Generate answer using the LLM, considering the chat history.
     """
-    print("---GENERATE---")
+    log_debug_message("Generating answer", context="generate")
     question = state["question"]
     documents = state["documents"]
     chat_history = state.get("chat_history", [])
@@ -1011,7 +1011,7 @@ def grade_documents(state):
     """
     Determines whether the retrieved documents are relevant to the question.
     """
-    print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
+    log_debug_message("Checking document relevance to question", context="grade_documents")
     question = state["question"]
     documents = state["documents"]
     attempts = state.get("attempts", 0)
@@ -1026,10 +1026,10 @@ def grade_documents(state):
         )
         grade = score.binary_score
         if grade == "yes":
-            print("---GRADE: DOCUMENT RELEVANT---")
+            log_debug_message("Document relevant", context="grade_documents")
             filtered_docs.append(d)
         else:
-            print("---GRADE: DOCUMENT NOT RELEVANT---")
+            log_debug_message("Document not relevant", context="grade_documents")
             continue
     
     # Preservar todos los campos en el estado devuelto
@@ -1049,24 +1049,24 @@ def transform_query(state):
     """
     Transform the query to produce a better question.
     """
-    print("---TRANSFORM QUERY---")
+    log_debug_message("Transforming query", context="transform_query")
     question = state["question"]
     documents = state["documents"]
     attempts = state.get("attempts", 0) + 1
     categories = state.get("categories", [])
     chat_history = state.get("chat_history", [])
 
-    print(f"---ATTEMPT #{attempts}---")
+    log_debug_message(f"Attempt #{attempts}", context="transform_query", extra_data={"attempts": attempts})
     
     # Si ya superamos el número máximo de intentos, devolvemos un mensaje estándar
     if attempts > 3:
-        print("---EXCEEDED MAXIMUM ATTEMPTS, RETURNING STANDARD RESPONSE---")
+        log_warning_message("Exceeded maximum attempts, returning standard response", context="transform_query")
         better_question = "Información general disponible en los documentos"
     else:
         # Re-write question
         better_question = question_rewriter.invoke({"question": question})
     
-    print(f"---TRANSFORMED QUERY: {better_question}---")
+    log_debug_message(f"Transformed query: {better_question}", context="transform_query", extra_data={"transformed_query": better_question})
     
     # Preservar todos los campos en el estado devuelto
     input_type = state.get("input_type", "")
@@ -1085,8 +1085,8 @@ def simple_response(state):
     """
     Returns a simple response that was already generated during input validation.
     """
-    print("---SIMPLE RESPONSE---")
-    print(f"---RETURNING DIRECT RESPONSE: {state.get('generation', 'No response found')}---")
+    log_debug_message("Simple response", context="simple_response")
+    log_debug_message(f"Returning direct response: {state.get('generation', 'No response found')}", context="simple_response")
     return state
 
 # --- Edges ---
@@ -1095,40 +1095,40 @@ def decide_after_validation(state):
     """
     Decides the next step after input validation.
     """
-    print("---DECIDE AFTER VALIDATION---")
+    log_debug_message("Deciding after validation", context="decide_after_validation")
     needs_documents = state.get("needs_documents", True)
     input_type = state.get("input_type", "document_question")
     
     if not needs_documents and input_type in ["greeting", "casual_conversation"]:
-        print("---DECISION: DIRECT RESPONSE, NO DOCUMENTS NEEDED---")
+        log_debug_message("Decision: Direct response, no documents needed", context="decide_after_validation")
         return "simple_response"
     else:
-        print("---DECISION: CONTINUE TO DOCUMENT SEARCH---")
+        log_debug_message("Decision: Continue to document search", context="decide_after_validation")
         return "categorize_question"
 
 def decide_to_generate(state):
     """
     Determines whether to generate an answer, or re-generate a question.
     """
-    print("---ASSESS GRADED DOCUMENTS---")
+    log_debug_message("Assessing graded documents", context="decide_to_generate")
     filtered_documents = state["documents"]
     attempts = state.get("attempts", 0)
 
     if not filtered_documents:
-        print("---DECISION: ALL DOCUMENTS ARE NOT RELEVANT TO QUESTION, TRANSFORM QUERY---")
+        log_debug_message("Decision: All documents are not relevant to question, transform query", context="decide_to_generate")
         if attempts >= 3:
-            print("---MAXIMUM ATTEMPTS REACHED, GENERATING FINAL RESPONSE---")
+            log_warning_message("Maximum attempts reached, generating final response", context="decide_to_generate")
             return "generate"
         return "transform_query"
     else:
-        print(f"---DECISION: GENERATE WITH {len(filtered_documents)} RELEVANT DOCUMENTS---")
+        log_debug_message(f"Decision: Generate with {len(filtered_documents)} relevant documents", context="decide_to_generate", extra_data={"relevant_docs_count": len(filtered_documents)})
         return "generate"
 
 def grade_generation_v_documents_and_question(state):
     """
     Determines whether the generation is grounded in the document and answers question.
     """
-    print("---CHECK HALLUCINATIONS---")
+    log_debug_message("Checking hallucinations", context="grade_generation_v_documents_and_question")
     question = state["question"]
     documents = state["documents"]
     generation = state["generation"]
@@ -1136,14 +1136,14 @@ def grade_generation_v_documents_and_question(state):
 
     # Máximo de 3 intentos para evitar bucles infinitos
     if attempts >= 3:
-        print("---MAXIMUM ATTEMPTS REACHED, RETURNING BEST RESULT SO FAR---")
+        log_warning_message("Maximum attempts reached, returning best result so far", context="grade_generation_v_documents_and_question")
         return "useful"
 
     formatted_docs = format_docs(documents)
     
     # Si no hay documentos, generamos una respuesta que indique que no tenemos información
     if not formatted_docs:
-        print("---NO RELEVANT DOCUMENTS FOUND, GENERATING FINAL RESPONSE---")
+        log_warning_message("No relevant documents found, generating final response", context="grade_generation_v_documents_and_question")
         custom_response = """
         Según los documentos analizados, no se encontró información relevante sobre este tema.
         
@@ -1160,23 +1160,23 @@ def grade_generation_v_documents_and_question(state):
 
     # Check hallucination
     if grade == "yes":
-        print("---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---")
+        log_debug_message("Decision: Generation is grounded in documents", context="grade_generation_v_documents_and_question")
         # Check question-answering
-        print("---GRADE GENERATION vs QUESTION---")
+        log_debug_message("Grading generation vs question", context="grade_generation_v_documents_and_question")
         score = answer_grader.invoke({"question": question, "generation": generation})
         grade = score.binary_score
         if grade == "yes":
-            print("---DECISION: GENERATION ADDRESSES QUESTION---")
+            log_debug_message("Decision: Generation addresses question", context="grade_generation_v_documents_and_question")
             return "useful"
         else:
-            print("---DECISION: GENERATION DOES NOT ADDRESS QUESTION---")
+            log_debug_message("Decision: Generation does not address question", context="grade_generation_v_documents_and_question")
             if attempts >= 3:
-                print("---MAXIMUM ATTEMPTS REACHED, RETURNING BEST RESULT SO FAR---")
+                log_warning_message("Maximum attempts reached, returning best result so far", context="grade_generation_v_documents_and_question")
                 return "useful"
             return "not useful"
     else:
-        print("---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS, RE-TRY---")
+        log_debug_message("Decision: Generation is not grounded in documents, re-try", context="grade_generation_v_documents_and_question")
         if attempts >= 3:
-            print("---MAXIMUM ATTEMPTS REACHED, RETURNING BEST RESULT SO FAR---")
+            log_warning_message("Maximum attempts reached, returning best result so far", context="grade_generation_v_documents_and_question")
             return "useful"
         return "not supported"
